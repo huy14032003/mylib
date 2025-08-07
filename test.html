@@ -1,61 +1,134 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Document</title>
-</head>
-<body>
-    <input type="text" id="search-input" placeholder="Tìm kiếm..." style="margin-bottom: 10px;" />
+  </head>
+  <body>
+    <input
+      type="text"
+      id="search-input"
+      placeholder="Tìm kiếm..."
+      style="margin-bottom: 10px"
+    />
+    <div class="table-responsive">
+      <table id="tbl-products" class="table table-bordered">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Tên sản phẩm</th>
+            <th>Giá</th>
+            <th>Danh mục</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Dữ liệu sẽ render ở đây -->
+        </tbody>
+      </table>
+    </div>
 
     <div class="table-responsive">
-  <table id="tbl-application" class="table table-bordered">
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Tên</th>
-        <th>Email</th>
-      </tr>
-    </thead>
-    <tbody>
-      <!-- Dữ liệu sẽ được thêm ở đây -->
-    </tbody>
-  </table>
-</div>
-<!-- Phân trang sẽ tự động chèn vào sau bảng -->
- <script src="applib.js"></script>
-<script>
-  // Hàm render toàn bộ dữ liệu vào bảng (không phân trang ở đây)
-  function renderTable(data, instance) {
-    const tbody = document.querySelector("#tbl-application tbody");
-    tbody.innerHTML = "";
+      <table id="tbl-application" class="table table-bordered">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Tên</th>
+            <th>Email</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Dữ liệu sẽ được thêm ở đây -->
+        </tbody>
+      </table>
+    </div>
+    <!-- Phân trang sẽ tự động chèn vào sau bảng -->
+    <script src="applib.js"></script>
+    <script>
+      // Hàm render toàn bộ dữ liệu vào bảng (không phân trang ở đây)
+      function renderTable(data, instance) {
+        const tbody = document.querySelector("#tbl-application tbody");
+        tbody.innerHTML = "";
 
-    data.forEach((item) => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
+        data.forEach((item) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
         <td>${item.id}</td>
         <td>${item.name}</td>
         <td>${item.email}</td>
       `;
-      tbody.appendChild(tr);
-    });
-  }
+          tbody.appendChild(tr);
+        });
+      }
 
-  // Tạo đối tượng và khởi tạo
-  const table = new AppLib.DataTableLib({
-    api: "https://jsonplaceholder.typicode.com/users", // API mẫu
-    rows: 1,
-    tableId: "tbl-application",
-    onRender: renderTable,
-  });
+      // Tạo đối tượng và khởi tạo
+      const table = new AppLib.DataTableLib({
+        api: "https://jsonplaceholder.typicode.com/users", // API mẫu
+        rows: 1,
+        tableId: "tbl-application",
+        onRender: renderTable,
+      });
 
-  table.init();
+      table.init();
 
-  // Thêm tìm kiếm nếu cần
-  document.getElementById("search-input")?.addEventListener("input", (e) => {
-    table.search(e.target.value);
-  });
-</script>
-</body>
+
+
+
+
+
+
+      // Thêm tìm kiếm nếu cần
+      document
+        .getElementById("search-input")
+        ?.addEventListener("input", (e) => {
+          table.search(e.target.value);
+        });
+
+
+
+
+
+
+      function renderProductTable(data, instance) {
+        const tbody = document.querySelector("#tbl-products tbody");
+        tbody.innerHTML = "";
+      
+        data.forEach((item) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+        <td>${item.id}</td>
+        <td>${item.title}</td>
+        <td>$${item.price}</td>
+        <td>${item.category}</td>
+      `;
+          tbody.appendChild(tr);
+        });
+      }
+
+      const productTable = new AppLib.DataTableLib({
+        api: "https://dummyjson.com/products",
+        rows: 5,
+        tableId: "tbl-products",
+        onRender:renderProductTable,
+      });
+
+      productTable.init();
+
+
+
+      const api = new AppLib.ApiClient("https://dummyjson.com/");
+
+// Gắn token khi cần
+// api.setToken("your-jwt-token");
+
+// GET thường
+// api.get("products").then(console.log);
+
+// GET với no-cache
+// api.get("products", { noCache: true }).then(console.log);
+
+// POST với timeout 5s
+api.post("products/add", { title: "New" }).then(console.log);
+    </script>
+  </body>
 </html>
-
