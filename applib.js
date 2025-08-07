@@ -87,118 +87,140 @@
     }
   }
 
-  class DataTableLib {
-    constructor(options = {}) {
-      const defaults = {
-        api: null,
-        rows: 5,
-        currentPage: 1,
-        lastPage: 1,
-        onRender: null,
-        tableId: "tbl-application",
-      };
+ class DataTableLib {
+  constructor(options = {}) {
+    const defaults = {
+      api: null,
+      rows: 5,
+      currentPage: 1,
+      tableId: "tbl-application",
+      onRender: null,
+    };
 
-      Object.assign(this, defaults, options);
-      this.data = [];
-      this.filteredData = [];
-    }
+    Object.assign(this, defaults, options);
+    this.data = [];
+    this.filteredData = [];
+  }
 
-    async init() {
-      await this.fetchData();
-    }
+  async init() {
+    await this.fetchData();
+  }
 
-    async fetchData() {
-      try {
-        const res = await fetch(this.api);
-        this.data = await res.json();
-        this.filteredData = [...this.data];
-        this.updatePagination();
-        this.render();
-      } catch (err) {
-        console.error("Lỗi khi fetch:", err);
-      }
-    }
-
-    updatePagination() {
-      this.lastPage = Math.ceil(this.filteredData.length / this.rows) || 1;
-      this.currentPage = Math.min(this.currentPage, this.lastPage);
-    }
-
-    getDataForCurrentPage() {
-      const start = (this.currentPage - 1) * this.rows;
-      const end = start + this.rows;
-      return this.filteredData.slice(start, end);
-    }
-
-    renderPagination() {
-      document.querySelector(".pagination-wrapper")?.remove();
-
-      const isFirst = this.currentPage === 1;
-      const isLast = this.currentPage === this.lastPage;
-
-      const html = `
-        <div class="pagination-wrapper">
-          <div class="pagination-nav">
-            <button class="page-btn prev-page" ${isFirst ? "disabled" : ""}>◀</button>
-            <span class="page-info">Trang ${this.currentPage} / ${this.lastPage}</span>
-            <button class="page-btn next-page" ${isLast ? "disabled" : ""}>▶</button>
-          </div>
-        </div>
-      `;
-
-      const tableElem = document.getElementById(this.tableId);
-      tableElem?.closest(".table-responsive")?.insertAdjacentHTML("afterend", html);
-
-      document.querySelector(".prev-page")?.addEventListener("click", () => {
-        if (!isFirst) {
-          this.currentPage--;
-          this.render();
-        }
-      });
-
-      document.querySelector(".next-page")?.addEventListener("click", () => {
-        if (!isLast) {
-          this.currentPage++;
-          this.render();
-        }
-      });
-    }
-
-    flattenValues(obj) {
-      return Object.values(obj).flatMap((val) =>
-        typeof val === "object" && val !== null ? this.flattenValues(val) : [val]
-      );
-    }
-
-    search(keyword = "") {
-      const key = keyword.toLowerCase().trim();
-      this.filteredData = key
-        ? this.data.filter((item) =>
-            this.flattenValues(item).some((val) =>
-              String(val ?? "").toLowerCase().includes(key)
-            )
-          )
-        : [...this.data];
-
-      this.currentPage = 1;
-      this.updatePagination();
-      this.render();
-    }
-
-    render() {
-      if (typeof this.onRender === "function") {
-        const data = this.getDataForCurrentPage();
-        this.onRender(data, this);
-      }
-      this.renderPagination();
-    }
-
-    reload() {
+  async fetchData() {
+    try {
+      const res = await fetch(this.api);
+      this.data = await res.json();
       this.filteredData = [...this.data];
-      this.updatePagination();
-      this.render();
+      this.render(); // Render ban đầu
+    } catch (err) {
+      console.error("Lỗi khi fetch:", err);
     }
   }
+
+  flattenValues(obj) {
+    return Object.values(obj).flatMap((val) =>
+      typeof val === "object" && val !== null ? this.flattenValues(val) : [val]
+    );
+  }
+
+  search(keyword = "") {
+    const key = keyword.toLowerCase().trim();
+    this.filteredData = key
+      ? this.data.filter((item) =>
+          this.flattenValues(item).some((val) =>
+            String(val ?? "").toLowerCase().includes(key)
+          )
+        )
+      : [...this.data];
+
+    this.currentPage = 1;
+    this.render();
+  }
+
+  renderTableRows() {
+    const table = document.getElementById(this.tableId);
+    const tbody = table?.querySelector("tbody");
+    if (!tbody) return;
+
+    const rows = Array.from(tbody.rows);
+    const rowsPerPage = this.rows;
+    const totalPages = Math.ceil(rows.length / rowsPerPage) || 1;
+
+    rows.forEach((row, index) => {
+      row.style.display = "none";
+      if (
+        index >= (this.currentPage - 1) * rowsPerPage &&
+        index < this.currentPage * rowsPerPage
+      ) {
+        row.style.display = "";
+      }
+    });
+
+    this.renderPagination(totalPages);
+  }
+
+  renderPagination(totalPages) {
+    let container = document.getElementById("pagination");
+    if (!container) {
+      container = document.createElement("div");
+      container.id = "pagination";
+      const tableElem = document.getElementById(this.tableId);
+      tableElem?.closest(".table-responsive")?.appendChild(container);
+    }
+    container.innerHTML = "";
+
+    const addButton = (label, page, active = false, disabled = false) => {
+      const btn = document.createElement("button");
+      btn.textContent = label;
+      if (active) btn.classList.add("active");
+      if (disabled) btn.disabled = true;
+      if (!disabled) {
+        btn.addEventListener("click", () => {
+          this.currentPage = page;
+          this.renderTableRows();
+        });
+      }
+      container.appendChild(btn);
+    };
+
+    addButton("«", this.currentPage - 1, false, this.currentPage === 1);
+
+    if (this.currentPage > 2) addButton(1, 1);
+    if (this.currentPage >= 3)
+      container.appendChild(document.createTextNode("..."));
+
+    for (let i = this.currentPage - 1; i <= this.currentPage + 1; i++) {
+      if (i > 0 && i <= totalPages) {
+        addButton(i, i, i === this.currentPage);
+      }
+    }
+
+    if (this.currentPage < totalPages - 2)
+      container.appendChild(document.createTextNode("..."));
+    if (this.currentPage < totalPages - 1)
+      addButton(totalPages, totalPages);
+
+    addButton("»", this.currentPage + 1, false, this.currentPage === totalPages);
+  }
+
+  render() {
+    if (typeof this.onRender === "function") {
+      this.onRender(this.filteredData, this);
+    }
+
+    // Sau khi render dữ liệu vào bảng, mới gọi logic phân trang DOM
+    setTimeout(() => {
+      this.renderTableRows();
+    });
+  }
+
+  reload() {
+    this.filteredData = [...this.data];
+    this.currentPage = 1;
+    this.render();
+  }
+}
+
 
   // Export 2 class ra global
   global.AppLib = {
