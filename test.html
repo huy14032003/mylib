@@ -1,134 +1,144 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
+    <title>Demo DataTableLib</title>
+    <style>
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-top: 10px;
+      }
+      th,
+      td {
+        border: 1px solid #ccc;
+        padding: 6px;
+        text-align: left;
+      }
+      th {
+        cursor: pointer;
+        background: #f0f0f0;
+      }
+      #loading {
+        display: none;
+        color: blue;
+      }
+      #error {
+        color: red;
+        display: none;
+      }
+      .pagination {
+        margin-top: 10px;
+      }
+      .pagination button {
+        padding: 5px 10px;
+        margin: 0 3px;
+        cursor: pointer;
+      }
+    </style>
   </head>
   <body>
-    <input
-      type="text"
-      id="search-input"
-      placeholder="Tìm kiếm..."
-      style="margin-bottom: 10px"
-    />
-    <div class="table-responsive">
-      <table id="tbl-products" class="table table-bordered">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Tên sản phẩm</th>
-            <th>Giá</th>
-            <th>Danh mục</th>
-          </tr>
-        </thead>
-        <tbody>
-          <!-- Dữ liệu sẽ render ở đây -->
-        </tbody>
+    <h1>Test DataTableLib</h1>
+
+    <div id="loading">Đang tải...</div>
+    <input type="text" id="search-box" placeholder="Tìm kiếm..." />
+    
+    <div class="table1">
+      <table id="tbl-application">
+        <thead></thead>
+        <tbody></tbody>
       </table>
+
+      <div class="pagination" id="pagination"></div>
+    </div>
+    <input type="text" id="search-box2" placeholder="Tìm kiếm..." />
+    <div class="table2">
+
+      <table id="tbl-application2">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+
+      <div class="pagination" id="pagination2"></div>
     </div>
 
-    <div class="table-responsive">
-      <table id="tbl-application" class="table table-bordered">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Tên</th>
-            <th>Email</th>
-          </tr>
-        </thead>
-        <tbody>
-          <!-- Dữ liệu sẽ được thêm ở đây -->
-        </tbody>
-      </table>
-    </div>
-    <!-- Phân trang sẽ tự động chèn vào sau bảng -->
     <script src="applib.js"></script>
+
     <script>
-      // Hàm render toàn bộ dữ liệu vào bảng (không phân trang ở đây)
-      function renderTable(data, instance) {
-        const tbody = document.querySelector("#tbl-application tbody");
-        tbody.innerHTML = "";
-
-        data.forEach((item) => {
-          const tr = document.createElement("tr");
-          tr.innerHTML = `
-        <td>${item.id}</td>
-        <td>${item.name}</td>
-        <td>${item.email}</td>
-      `;
-          tbody.appendChild(tr);
+      document.addEventListener("DOMContentLoaded", () => {
+        // FRONT-END pagination (serverSide: false)
+        const table = new AppLib.DataTableLib({
+          api: "https://dummyjson.com/users?limit=100", // lấy nhiều data để phân trang ở client
+          tableId: "tbl-application",
+          searchBoxId: "search-box",
+          loadingId: "loading",
+          rows: 10,
+          serverSide: false,
+          sortable: true,
+          pagination: true,
+          paginationId: "pagination",
+          searchDebounceMs: 650,
+          columnsConfig: [
+            { field: "id", label: "ID" },
+            {
+              field: "firstName",
+              label: "First Name",
+              render: (row) => `<b>${row.firstName}</b>`,
+            },
+            {
+              field: "email",
+              label: "Email",
+              render: (row) => `<a href="mailto:${row.email}">${row.email}</a>`,
+            },
+          ],
         });
-      }
+        table.init();
 
-      // Tạo đối tượng và khởi tạo
-      const table = new AppLib.DataTableLib({
-        api: "https://jsonplaceholder.typicode.com/users", // API mẫu
-        rows: 1,
-        tableId: "tbl-application",
-        onRender: renderTable,
+        // BACK-END pagination (serverSide: true)
+        const table2 = new AppLib.DataTableLib({
+          api: "https://dummyjson.com/users",
+          tableId: "tbl-application2",
+          rows: 5,
+          serverSide: true, // kích hoạt gọi API phân trang
+          
+          sortable: true,
+          pagination: true,
+          paginationId: "pagination2",
+          searchDebounceMs: 650,
+           
+           searchBoxId: "search-box2",
+          buildUrl: (page, searchTerm) => {
+            // const limit = 5;
+            const params={
+              limit:5,
+              skip: (page - 1) * 5,
+              
+            }
+            
+            // const limit = 5;
+            // const skip = (page - 1) * limit;
+             let url = `https://dummyjson.com/users?${new URLSearchParams(params).toString()}`;
+            if (searchTerm) url += `&q=${encodeURIComponent(searchTerm)}`;
+            return url;
+          },
+          formatData: (res) => res.users,
+          columnsConfig: [
+            { field: "id", label: "ID" },
+            {
+              field: "firstName",
+              label: "First Name",
+              render: (row) => `<b>${row.firstName}</b>`,
+            },
+            {
+              field: "email",
+              label: "Email",
+              render: (row) => `<a href="mailto:${row.email}">${row.email}</a>`,
+            },
+          ],
+        });
+        table2.init();
       });
-
-      table.init();
-
-
-
-
-
-
-
-      // Thêm tìm kiếm nếu cần
-      document
-        .getElementById("search-input")
-        ?.addEventListener("input", (e) => {
-          table.search(e.target.value);
-        });
-
-
-
-
-
-
-      function renderProductTable(data, instance) {
-        const tbody = document.querySelector("#tbl-products tbody");
-        tbody.innerHTML = "";
-      
-        data.forEach((item) => {
-          const tr = document.createElement("tr");
-          tr.innerHTML = `
-        <td>${item.id}</td>
-        <td>${item.title}</td>
-        <td>$${item.price}</td>
-        <td>${item.category}</td>
-      `;
-          tbody.appendChild(tr);
-        });
-      }
-
-      const productTable = new AppLib.DataTableLib({
-        api: "https://dummyjson.com/products",
-        rows: 5,
-        tableId: "tbl-products",
-        onRender:renderProductTable,
-      });
-
-      productTable.init();
-
-
-
-      const api = new AppLib.ApiClient("https://dummyjson.com/");
-
-// Gắn token khi cần
-// api.setToken("your-jwt-token");
-
-// GET thường
-// api.get("products").then(console.log);
-
-// GET với no-cache
-// api.get("products", { noCache: true }).then(console.log);
-
-// POST với timeout 5s
-api.post("products/add", { title: "New" }).then(console.log);
     </script>
   </body>
 </html>

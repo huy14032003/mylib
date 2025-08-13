@@ -101,13 +101,31 @@
         currentPage: 1,
         tableId: "tbl-application",
         onRender: null,
-        pagination: true, // 👈 Mặc định có phân trang
+        pagination: true,
+        searchBoxId: "",
+        serverSide: false,
+        totalRows: 0,
+        loadingId: "",
+        errorId: "",
+        sortable: true,
+        paginationId: "",
+        columnsConfig: [], // [{ field, label, render: row => `<b>${row.name}</b>` }]
+        searchDebounceMs: 400,
+        buildUrl: null, // callback tùy chỉnh build URL
+        formatData: null, // callback tùy chỉnh format dữ liệu
       };
-
       Object.assign(this, defaults, options);
+
       this.data = [];
       this.filteredData = [];
+      this.sortConfig = { key: null, direction: "asc" };
+      this.baseApi = this.api;
+
+      // debounce & fetch control
+      this._searchTimer = null;
+      this._abortController = null;
     }
+
     getArrayFromData(data) {
       if (Array.isArray(data)) return [...data];
       for (const key in data) {
@@ -115,19 +133,73 @@
       }
       return [];
     }
+
     async init() {
       await this.fetchData();
+      this._setupSearch();
+      if (this.sortable) this.enableSorting();
     }
 
-    async fetchData() {
-      try {
-        const res = await fetch(this.api);
-        this.data = await res.json();
-        this.filteredData = this.getArrayFromData(this.data);
+    _setupSearch() {
+      if (!this.searchBoxId) return;
+      const input = document.getElementById(this.searchBoxId);
+      if (!input) return;
 
-        this.render(); // Render ban đầu
+      input.addEventListener("input", (e) => {
+        const keyword = e.target.value;
+        clearTimeout(this._searchTimer);
+        this._searchTimer = setTimeout(() => {
+          if (this.serverSide) {
+            this.currentPage = 1;
+            this.fetchData(1, keyword);
+          } else {
+            this.search(keyword);
+          }
+        }, this.searchDebounceMs);
+      });
+    }
+
+    async fetchData(page = this.currentPage, searchTerm = "") {
+      this.showLoading(true);
+      // Hủy request cũ nếu còn
+      try {
+        this._abortController?.abort();
+      } catch {}
+      this._abortController = new AbortController();
+
+      try {
+        // Dùng callback buildUrl nếu serverSide
+        let url =
+          this.serverSide && typeof this.buildUrl === "function"
+            ? this.buildUrl(page, searchTerm)
+            : this.api;
+
+        const res = await fetch(url, { signal: this._abortController.signal });
+        if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+        let result = await res.json();
+
+        if (typeof this.formatData === "function") {
+          // Luôn áp dụng formatData nếu có
+          const formatted = this.formatData(result) || [];
+          this.data = Array.isArray(formatted)
+            ? formatted
+            : this.getArrayFromData(formatted);
+        } else {
+          // Không có formatData → tự tìm mảng trong object hoặc dùng thẳng
+          this.data = this.getArrayFromData(result);
+        }
+
+        // Gán filteredData và totalRows
+        this.filteredData = [...this.data];
+        this.totalRows = this.serverSide
+          ? result.total || this.filteredData.length
+          : this.filteredData.length;
+
+        this.render();
       } catch (err) {
-        console.error("Lỗi khi fetch:", err);
+        if (err.name !== "AbortError") this.showError(err.message);
+      } finally {
+        this.showLoading(false);
       }
     }
 
@@ -150,39 +222,99 @@
             )
           )
         : [...this.data];
-
       this.currentPage = 1;
       this.render();
     }
 
-    renderTableRows() {
-      if (!this.pagination) return; // 👈 Bỏ qua nếu không phân trang
-
+    enableSorting() {
       const table = document.getElementById(this.tableId);
-      const tbody = table?.querySelector("tbody");
-      if (!tbody) return;
-
-      const rows = Array.from(tbody.rows);
-      const rowsPerPage = this.rows;
-      const totalPages = Math.ceil(rows.length / rowsPerPage) || 1;
-
-      rows.forEach((row, index) => {
-        row.style.display = "none";
-        if (
-          index >= (this.currentPage - 1) * rowsPerPage &&
-          index < this.currentPage * rowsPerPage
-        ) {
-          row.style.display = "";
-        }
+      const headers = table?.querySelectorAll("thead th");
+      headers?.forEach((th) => {
+        th.style.cursor = "pointer";
+        th.addEventListener("click", () => {
+          const key = th.dataset.key;
+          this.sortConfig.direction =
+            this.sortConfig.key === key && this.sortConfig.direction === "asc"
+              ? "desc"
+              : "asc";
+          this.sortConfig.key = key;
+          this.sortData();
+        });
       });
+    }
 
-      this.renderPagination(totalPages);
+    sortData() {
+      const { key, direction } = this.sortConfig;
+      if (!key) return;
+      this.filteredData.sort((a, b) => {
+        const valA = a[key];
+        const valB = b[key];
+        if (valA < valB) return direction === "asc" ? -1 : 1;
+        if (valA > valB) return direction === "asc" ? 1 : -1;
+        return 0;
+      });
+      this.render();
+    }
+
+    renderTableRows() {
+      const table = document.getElementById(this.tableId);
+      const thead = table?.querySelector("thead");
+      const tbody = table?.querySelector("tbody");
+      if (!tbody || !thead) return;
+
+      // Header
+      thead.innerHTML = "";
+      const headerRow = document.createElement("tr");
+      this.columnsConfig.forEach((col) => {
+        const th = document.createElement("th");
+        th.textContent = col.label || col.field;
+        th.dataset.key = col.field;
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+
+      // Body
+      tbody.innerHTML = "";
+      let displayData = this.filteredData;
+      let totalPages = 1;
+
+      if (this.pagination) {
+        if (this.serverSide) {
+          totalPages = Math.ceil(this.totalRows / this.rows) || 1;
+        } else {
+          totalPages = Math.ceil(displayData.length / this.rows) || 1;
+          const start = (this.currentPage - 1) * this.rows;
+          const end = start + this.rows;
+          displayData = displayData.slice(start, end);
+        }
+      }
+
+      const fragment = document.createDocumentFragment();
+      displayData.forEach((row) => {
+        const tr = document.createElement("tr");
+        this.columnsConfig.forEach((col) => {
+          const td = document.createElement("td");
+          if (typeof col.render === "function") {
+            td.innerHTML = col.render(row);
+          } else {
+            td.textContent = row[col.field] ?? "";
+          }
+          tr.appendChild(td);
+        });
+        fragment.appendChild(tr);
+      });
+      tbody.appendChild(fragment);
+
+      if (this.pagination) this.renderPagination(totalPages);
+      if (this.sortable) this.enableSorting();
     }
 
     renderPagination(totalPages) {
       if (!this.pagination) return;
+      if (this.serverSide)
+        totalPages = Math.ceil(this.totalRows / this.rows) || 1;
 
-      const containerId = `pagination-${this.tableId}`;
+      const containerId = this.paginationId || `pagination-${this.tableId}`;
       let container = document.getElementById(containerId);
 
       if (!container) {
@@ -202,28 +334,23 @@
         if (!disabled) {
           btn.addEventListener("click", () => {
             this.currentPage = page;
-            this.renderTableRows();
+            if (this.serverSide) this.fetchData(page);
+            else this.renderTableRows();
           });
         }
         container.appendChild(btn);
       };
 
       addButton("«", this.currentPage - 1, false, this.currentPage === 1);
-
       if (this.currentPage > 2) addButton(1, 1);
       if (this.currentPage >= 3)
         container.appendChild(document.createTextNode("..."));
-
       for (let i = this.currentPage - 1; i <= this.currentPage + 1; i++) {
-        if (i > 0 && i <= totalPages) {
-          addButton(i, i, i === this.currentPage);
-        }
+        if (i > 0 && i <= totalPages) addButton(i, i, i === this.currentPage);
       }
-
       if (this.currentPage < totalPages - 2)
         container.appendChild(document.createTextNode("..."));
       if (this.currentPage < totalPages - 1) addButton(totalPages, totalPages);
-
       addButton(
         "»",
         this.currentPage + 1,
@@ -233,13 +360,9 @@
     }
 
     render() {
-      if (typeof this.onRender === "function") {
+      if (typeof this.onRender === "function")
         this.onRender(this.filteredData, this);
-      }
-
-      if (this.pagination) {
-        setTimeout(() => this.renderTableRows());
-      }
+      this.renderTableRows();
     }
 
     reload() {
@@ -247,124 +370,158 @@
       this.currentPage = 1;
       this.render();
     }
-  }
-class ApiClient {
-  constructor(baseUrl = "", options = {}) {
-    this.baseUrl = baseUrl.replace(/\/$/, "");
-    this.defaultHeaders = options.headers || {};
-    this.token = options.token || null; // JWT hoặc bearer token
-    this.defaultTimeout = options.timeout || 10000; // 10 giây
-  }
 
-  setToken(token) {
-    this.token = token;
-  }
-
-  buildUrl(endpoint) {
-    return `${this.baseUrl}/${endpoint}`.replace(/\/+$/, "");
-  }
-
-  getDefaultHeaders(noCache = false) {
-    const headers = {
-      "Content-Type": "application/json",
-      ...this.defaultHeaders,
-    };
-
-    if (this.token) {
-      headers["Authorization"] = `Bearer ${this.token}`;
+    showLoading(show) {
+      if (!this.loadingId) return;
+      const el = document.getElementById(this.loadingId);
+      if (el) el.style.display = show ? "block" : "none";
     }
 
-    if (noCache) {
-      headers["Cache-Control"] = "no-cache";
-      headers["Pragma"] = "no-cache";
+    showError(message) {
+      if (!this.errorId) return;
+      const el = document.getElementById(this.errorId);
+      if (el) {
+        el.textContent = message;
+        el.style.display = "block";
+      }
     }
-
-    return headers;
   }
 
-  async fetchWithTimeout(resource, options = {}) {
-    const { timeout = this.defaultTimeout } = options;
+  class ApiClient {
+    constructor(baseUrl = "", options = {}) {
+      this.baseUrl = baseUrl.replace(/\/$/, "");
+      this.defaultHeaders = options.headers || {};
+      this.token = options.token || null; // JWT hoặc bearer token
+      this.defaultTimeout = options.timeout || 10000; // 10 giây
+    }
 
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
+    setToken(token) {
+      this.token = token;
+    }
 
-    try {
-      const response = await fetch(resource, {
-        ...options,
-        signal: controller.signal,
-      });
+    buildUrl(endpoint) {
+      return `${this.baseUrl}/${endpoint}`.replace(/\/+$/, "");
+    }
+    showLoading(show) {
+      if (!this.loadingId) return;
+      const el = document.getElementById(this.loadingId);
+      if (el) el.style.display = show ? "block" : "none";
+    }
 
-      clearTimeout(id);
+    showError(message) {
+      if (!this.errorId) return;
+      const el = document.getElementById(this.errorId);
+      if (el) el.textContent = message;
+    }
 
-      // Kiểm tra status
-      if (!response.ok) {
-        let errorDetail = `Request failed with status ${response.status}`;
-        try {
-          const errorBody = await response.json();
-          errorDetail = errorBody.message || JSON.stringify(errorBody);
-        } catch (err) {
-          // ignore nếu không phải JSON
+    getDefaultHeaders(noCache = false) {
+      const headers = {
+        "Content-Type": "application/json",
+        ...this.defaultHeaders,
+      };
+
+      if (this.token) {
+        headers["Authorization"] = `Bearer ${this.token}`;
+      }
+
+      if (noCache) {
+        headers["Cache-Control"] = "no-cache";
+        headers["Pragma"] = "no-cache";
+      }
+
+      return headers;
+    }
+
+    async fetchWithTimeout(resource, options = {}) {
+      const { timeout = this.defaultTimeout } = options;
+
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeout);
+
+      try {
+        const response = await fetch(resource, {
+          ...options,
+          signal: controller.signal,
+        });
+
+        clearTimeout(id);
+
+        // Kiểm tra status
+        if (!response.ok) {
+          let errorDetail = `Request failed with status ${response.status}`;
+          try {
+            const errorBody = await response.json();
+            errorDetail = errorBody.message || JSON.stringify(errorBody);
+          } catch (err) {
+            // ignore nếu không phải JSON
+          }
+          throw new Error(errorDetail);
         }
-        throw new Error(errorDetail);
-      }
 
-      // Trả về JSON
-      return await response.json();
-    } catch (error) {
-      if (error.name === "AbortError") {
-        throw new Error("Request timeout exceeded");
+        // Trả về JSON
+        return await response.json();
+      } catch (error) {
+        if (error.name === "AbortError") {
+          throw new Error("Request timeout exceeded");
+        }
+        throw error;
       }
-      throw error;
+    }
+
+    buildQueryParams(params = {}) {
+      const query = new URLSearchParams(params).toString();
+      return query ? `?${query}` : "";
+    }
+
+    async get(endpoint, { params = {}, noCache = false, timeout } = {}) {
+      const url = this.buildUrl(endpoint) + this.buildQueryParams(params);
+
+      return this.fetchWithTimeout(url, {
+        method: "GET",
+        headers: this.getDefaultHeaders(noCache),
+        timeout,
+      });
+    }
+
+    /**
+     * Gửi yêu cầu POST tới endpoint cụ thể
+     * @param {string} endpoint - Đường dẫn API
+     * @param {object} data - Dữ liệu gửi lên server
+     * @param {object} [options] - Tuỳ chọn gửi (noCache, timeout,...)
+     * @returns {Promise<any>} Kết quả từ server
+     */
+    async post(endpoint, body = {}, { noCache = false, timeout } = {}) {
+      const isFormData = body instanceof FormData;
+
+      return this.fetchWithTimeout(this.buildUrl(endpoint), {
+        method: "POST",
+        headers: isFormData ? undefined : this.getDefaultHeaders(noCache),
+        body: isFormData ? body : JSON.stringify(body),
+        timeout,
+      });
+    }
+    async put(endpoint, body = {}, { noCache = false, timeout } = {}) {
+      return this.fetchWithTimeout(this.buildUrl(endpoint), {
+        method: "PUT",
+        headers: this.getDefaultHeaders(noCache),
+        body: JSON.stringify(body),
+        timeout,
+      });
+    }
+
+    async delete(endpoint, { noCache = false, timeout } = {}) {
+      return this.fetchWithTimeout(this.buildUrl(endpoint), {
+        method: "DELETE",
+        headers: this.getDefaultHeaders(noCache),
+        timeout,
+      });
     }
   }
-
-buildQueryParams(params = {}) {
-  const query = new URLSearchParams(params).toString();
-  return query ? `?${query}` : '';
-}
-
-async get(endpoint, { params = {}, noCache = false, timeout } = {}) {
-  const url = this.buildUrl(endpoint) + this.buildQueryParams(params);
-
-  return this.fetchWithTimeout(url, {
-    method: "GET",
-    headers: this.getDefaultHeaders(noCache),
-    timeout,
-  });
-}
-async post(endpoint, body = {}, { noCache = false, timeout } = {}) {
-  const isFormData = body instanceof FormData;
-
-  return this.fetchWithTimeout(this.buildUrl(endpoint), {
-    method: "POST",
-    headers: isFormData ? undefined : this.getDefaultHeaders(noCache),
-    body: isFormData ? body : JSON.stringify(body),
-    timeout,
-  });
-}
-  async put(endpoint, body = {}, { noCache = false, timeout } = {}) {
-    return this.fetchWithTimeout(this.buildUrl(endpoint), {
-      method: "PUT",
-      headers: this.getDefaultHeaders(noCache),
-      body: JSON.stringify(body),
-      timeout,
-    });
-  }
-
-  async delete(endpoint, { noCache = false, timeout } = {}) {
-    return this.fetchWithTimeout(this.buildUrl(endpoint), {
-      method: "DELETE",
-      headers: this.getDefaultHeaders(noCache),
-      timeout,
-    });
-  }
-}
 
   // Export 2 class ra global
   global.AppLib = {
     FormValidator,
     DataTableLib,
-    ApiClient
+    ApiClient,
   };
 })(window);
-
