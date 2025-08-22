@@ -1,104 +1,8 @@
 // applib.mjs
 
-export class FormValidator {
-  constructor(option) {
-    this.option = option;
-    this.rules = {
-      isRequired: (value) =>
-        value.trim() ? "" : "*Trường này không được để trống.",
-      isEmail: (value) =>
-        /\S+@\S+\.\S+/.test(value) ? "" : "*Email không hợp lệ.",
-      minLength: (value, min) =>
-        value.length >= min ? "" : `*Phải có ít nhất ${min} ký tự.`,
-      isMatch: (value, compareValue) => {
-        const compareInput = document.getElementById(compareValue);
-        return value === compareInput?.value ? "" : "*Giá trị không khớp.";
-      },
-    };
-    this.init();
-  }
 
-  getParent(element, selector) {
-    while (element.parentElement) {
-      if (element.parentElement.matches(selector))
-        return element.parentElement;
-      element = element.parentElement;
-    }
-  }
-
-  showError(input, message) {
-    const formGroup = this.getParent(input, this.option.formGroupSelect);
-    const msg =
-      formGroup?.querySelector(this.option.message) ||
-      formGroup.nextElementSibling;
-    if (msg) {
-      msg.innerHTML = message;
-      input.classList.add("invalid");
-    }
-  }
-
-  clearError(input) {
-    const formGroup = this.getParent(input, this.option.formGroupSelect);
-    const msg =
-      formGroup?.querySelector(this.option.message) ||
-      formGroup.nextElementSibling;
-    if (msg) {
-      msg.innerHTML = "";
-      input.classList.remove("invalid");
-    }
-  }
-
-  validate(input) {
-    const rules = input.dataset.rule ? input.dataset.rule.split(",") : [];
-    let error = "";
-    for (let rule of rules) {
-      const [ruleName, ...params] = rule.split(":");
-      if (this.rules[ruleName]) {
-        error = this.rules[ruleName](input.value, ...params);
-        if (error) break;
-      }
-    }
-
-    if (error) {
-      this.showError(input, error);
-      return false;
-    } else {
-      this.clearError(input);
-      return true;
-    }
-  }
-
-  init() {
-    const form = document.querySelector(this.option.form);
-    if (!form) return;
-
-    form.onsubmit = (e) => {
-      e.preventDefault();
-      let isValid = true;
-
-      form.querySelectorAll("input, select").forEach((input) => {
-        if (!this.validate(input)) isValid = false;
-      });
-
-      if (isValid && typeof this.option.onSubmit === "function") {
-        const formData = new FormData(form);
-        const data = {};
-        formData.forEach((value, key) => (data[key] = value));
-        this.option.onSubmit(data);
-      }
-    };
-
-    form.querySelectorAll("input, select").forEach((input) => {
-      input.oninput = () => this.validate(input);
-      input.onblur = () => this.validate(input);
-    });
-  }
-}
-
-
-
-
-export class DataTableLib {
+(function (global) {
+class DataTableLib {
 
 
   constructor(options = {}) {
@@ -383,7 +287,7 @@ export class DataTableLib {
   }
 }
 
-export class ApiClient {
+ class ApiClient {
   constructor(baseUrl = "", options = {}) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.defaultHeaders = options.headers || {};
@@ -491,3 +395,8 @@ export class ApiClient {
     });
   }
 }
+ global.AppLib = {
+    ApiClient,
+    DataTableLib,
+  };
+})(window);

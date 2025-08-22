@@ -1,8 +1,10 @@
 {
-  "name": "mylib",
+  "name": "@huy1403/mylib",
   "version": "1.0.0",
   "description": "```markdown # applib (phiên bản hiện đại hóa)",
   "main": "applib.js",
+  "module": "applib.mjs",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -16,5 +18,8 @@
   "bugs": {
     "url": "https://github.com/huy14032003/mylib/issues"
   },
-  "homepage": "https://github.com/huy14032003/mylib#readme"
+  "homepage": "https://github.com/huy14032003/mylib#readme",
+  "devDependencies": {
+    "esbuild": "^0.25.9"
+  }
 }
