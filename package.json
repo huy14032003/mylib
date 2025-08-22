@@ -1,0 +1,20 @@
+{
+  "name": "mylib",
+  "version": "1.0.0",
+  "description": "```markdown # applib (phiên bản hiện đại hóa)",
+  "main": "applib.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/huy14032003/mylib.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/huy14032003/mylib/issues"
+  },
+  "homepage": "https://github.com/huy14032003/mylib#readme"
+}
