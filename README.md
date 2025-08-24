@@ -1,8 +1,5 @@
-```markdown
 # applib (phiên bản hiện đại hóa)
-
-applib là một thư viện frontend nhỏ gọn bao gồm 3 thành phần chính:
-- FormValidator — validate form dựa trên data-rule.
+applib là một thư viện frontend nhỏ gọn bao gồm 2 thành phần chính:
 - DataTableLib — bảng dữ liệu hỗ trợ client/server-side, tìm kiếm, phân trang, sắp xếp, render tuỳ biến cột và hàng (rowRenderer).
 - ApiClient — wrapper fetch với timeout, xử lý JSON/text và header mặc định.
 
@@ -16,49 +13,12 @@ Sao chép file `applib.mjs` vào dự án của bạn và import các class cầ
 Ví dụ:
 ```html
 <script type="module">
-import { DataTableLib, FormValidator, ApiClient } from './applib.mjs';
+import { DataTableLib, ApiClient } from './applib.mjs';
 // sử dụng ở đây
 </script>
 ```
 
 ---
-
-## FormValidator
-
-Cấu trúc HTML mẫu:
-```html
-<form id="frm">
-  <div class="form-group">
-    <input name="email" data-rule="isRequired,isEmail" />
-    <div class="msg"></div>
-  </div>
-  <button type="submit">Submit</button>
-</form>
-```
-
-Khởi tạo:
-```js
-import { FormValidator } from './applib.mjs';
-
-new FormValidator({
-  form: '#frm',
-  formGroupSelect: '.form-group',
-  message: '.msg',
-  onSubmit: data => console.log('submitted', data)
-});
-```
-
-Quy ước:
-- Các rule đọc từ thuộc tính `data-rule`, phân tách bằng dấu phẩy.
-- Supported rules:
-  - `isRequired`
-  - `isEmail`
-  - `minLength:N` (ví dụ `minLength:6`)
-  - `isMatch:otherInputId` (so khớp với input có id khác)
-- Thông báo lỗi được hiển thị trong phần tử match selector `message` trong `formGroupSelect` hoặc phần tử sibling tiếp theo nếu không tìm thấy.
-
----
-
 ## ApiClient
 
 Ví dụ dùng:
@@ -78,6 +38,155 @@ Tính năng:
 Ghi chú:
 - `buildUrl` xử lý slash an toàn để tránh double-slash.
 - Khi gửi FormData, ApiClient không set `Content-Type` để trình duyệt tự set boundary.
+
+Gợi ý:
+- Nên sử dụng 1 module call api riêng biệt, dễ bảo trì và thao tác hơn
+- Ví dụ:
+```js
+import { ApiClient } from "/libs/js/applib.js";
+
+export const callapi = (() => {
+    const api = new ApiClient('http://localhost:3000');
+    const API = {
+    postUserLogin:(data)=>{return api.post('api/auth/login',data)},
+    postUserRegister:(data)=>{return api.post('api/auth/register',data)}
+    };
+      return{API};
+})();
+```
+- Tại các module khác cần 
+```js
+import { callapi } from "/assets/js/callapi.js";
+const{postUserLogin,postUserRegister}=callapi.API;
+```
+- Cách gọi api
+```js
+ const res= await postUserLogin
+    ({
+        username: _ui.userLogin.value.trim(), 
+        password: _ui.passLogin.value.trim(),
+    })
+    console.log(res);
+```
+---
+Một số ví dụ sử dụng ApiClient chi tiết
+1 GET:
+```js
+// query params
+await api.get('users', { params: { page: 2, limit: 10 } });
+
+// không cache
+await api.get('users', { noCache: true });
+
+// custom timeout
+await api.get('users', { timeout: 5000 });
+```
+- params: Object { key: value } → chuyển thành query string
+
+- noCache: true → thêm header Cache-Control: no-cache
+
+- timeout: số ms, default = defaultTimeout
+2 POST:
+```js
+// gửi JSON
+await api.post('users', { name: 'Alice', age: 25 });
+
+// gửi FormData
+const formData = new FormData();
+formData.append('avatar', fileInput.files[0]);
+await api.post('users/upload', formData);
+```
+- Nếu body là FormData, Content-Type sẽ tự động bỏ qua.
+
+- Nếu là JSON, tự động stringify
+3 PUT:
+```js
+await api.put('users/123', { name: 'Bob', age: 30 });
+
+```
+- Cập nhật dữ liệu, body dạng JSON.
+
+- Hỗ trợ noCache và timeout tương tự GET/POST.
+4 DELETE:
+```js
+await api.delete('users/123');
+//dùng với params
+await api.delete('users', { params: { id: 123 } });
+```
+---
+Cách xử lý lỗi
+```js
+try {
+  const data = await api.get('users/999');
+  console.log(data);
+} catch (error) {
+  console.error('API Error:', error.message);
+}
+```
+---
+Chức năng khác
+1 Build URL & Query params:
+```js
+const api = new ApiClient("https://dev.example.com");
+const url = api.buildUrl('users'); // https://api.example.com/users
+const query = api.buildQueryParams({ page: 1, limit: 10 }); // ?page=1&limit=10
+
+```
+- Build_URL tự loại dấu thừa /, tránh viết URL thủ công nhiều nơi
+- Query params chuyển object { key: value } → query string, không cần tự encode, tránh lỗi khi params phức tạp,Tự động bỏ nếu object rỗng
+
+Tóm lại để tránh viết dài mà nhiều với Build_URL và  biến object { key: value } thành query string cho GET/DELETE với query params:))) 
+```js
+const query = api.buildQueryParams({ page: 1, limit: 10 });
+console.log(query); // "?page=1&limit=10"   <- nó tạp ra cái này
+
+
+const api = new ApiClient("https://api.example.com");
+const url = api.buildUrl("users");
+console.log(url); // "https://api.example.com/users"  <- viết url là nó ra thế này
+
+```
+
+2 Đăng ký endpoint tiện lợi:
+```js
+registerGetEndpoint(name, url, cacheOpt)
+registerPostEndpoint(name, url)
+registerPutEndpoint(name, url)
+registerDeleteEndpoint(name, url)
+
+```
+- Cách sử dụng endpoints
+```js
+import { ApiClient } from './ApiClient.js';
+const api = new ApiClient('https://jsonplaceholder.typicode.com'); //hoặc /sample-system
+
+// GET
+api.registerGetEndpoint('getUsers', 'users');
+
+// POST
+api.registerPostEndpoint('createUser', 'users');
+
+// PUT
+api.registerPutEndpoint('updateUser', 'users/1');
+
+// DELETE
+api.registerDeleteEndpoint('deleteUser', 'users/1');
+
+```
+- Gọi endpoints đã đăng kí
+```js
+// GET
+const users = await api.endpoints.getUsers({ page: 1, limit: 5 });
+
+// POST
+await api.endpoints.createUser({ name: 'Alice', age: 25 });
+
+// PUT
+await api.endpoints.updateUser({ name: 'Bob' });
+
+// DELETE
+await api.endpoints.deleteUser();
+```
 
 ---
 
