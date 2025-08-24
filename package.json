@@ -1,6 +1,6 @@
 {
   "name": "@huy1403/mylib",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "```markdown # applib (phiên bản hiện đại hóa)",
   "main": "applib.js",
   "module": "applib.mjs",
