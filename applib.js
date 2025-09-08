@@ -388,6 +388,7 @@ export class ApiClient {
     this.defaultHeaders = options.headers || {};
     this.token = options.token || null;
     this.defaultTimeout = options.timeout || 10000;
+    this.endpoints={}
   }
 
   setToken(token) {
