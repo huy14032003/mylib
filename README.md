@@ -45,19 +45,17 @@ Gợi ý:
 ```js
 import { ApiClient } from "/libs/js/applib.js";
 
-export const callapi = (() => {
-    const api = new ApiClient('http://localhost:3000');
-    const API = {
-    postUserLogin:(data)=>{return api.post('api/auth/login',data)},
-    postUserRegister:(data)=>{return api.post('api/auth/register',data)}
-    };
-      return{API};
-})();
+const api = new ApiClient("http://localhost:3000");
+
+api.registerPostEndpoint("postUserLogin", "api/auth/login");
+api.registerPostEndpoint("postUserRegister", "api/auth/register");
+
+export default api.endpoints;
 ```
 - Tại các module khác cần 
 ```js
-import { callapi } from "/assets/js/callapi.js";
-const{postUserLogin,postUserRegister}=callapi.API;
+import API from "/assets/js/callapi.js";
+const{postUserLogin,postUserRegister}=API;
 ```
 - Cách gọi api
 ```js
@@ -172,20 +170,25 @@ api.registerPutEndpoint('updateUser', 'users/1');
 // DELETE
 api.registerDeleteEndpoint('deleteUser', 'users/1');
 
+
+export default api.endpoints;
 ```
 - Gọi endpoints đã đăng kí
 ```js
+import API from "/assets/js/callapi.js";
+  const {getUsers, createUser,updateUser,deleteUser}=API
 // GET
-const users = await api.endpoints.getUsers({ page: 1, limit: 5 });
+
+const res = await getUsers({ page: 1, limit: 5 });
 
 // POST
-await api.endpoints.createUser({ name: 'Alice', age: 25 });
+const res =await createUser({ name: 'Alice', age: 25 });
 
 // PUT
-await api.endpoints.updateUser({ name: 'Bob' });
+const res =await updateUser({ name: 'Bob' });
 
 // DELETE
-await api.endpoints.deleteUser();
+const res =await deleteUser();
 ```
 
 ---
