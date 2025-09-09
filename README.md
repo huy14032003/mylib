@@ -279,6 +279,33 @@ rowRenderer: (row) => {
 ```
 
 ---
+Ví dụ về format nếu data không trả về đúng định dạng lib hỗ trợ
+```
+formatData: (result) => {
+     result.total = result?.size ?? [];
+     console.log(result);
+      return result.data || [];
+  },
+
+//Ex 2:
+ formatData: (result) => {
+    const flatData = [];
+    result.data.forEach((item) => {
+    item.models?.forEach((model) => {
+     model.errors?.forEach((error) => {
+      flatData.push({
+         highlightDate: item.highlightDate,
+         modelName: model.modelName,
+         errorCode: error.errorCode,
+         errorCount: error.errorCount,
+      });
+   });
+  });
+ });
+   return flatData.length?flatData:[{ __noData: true }];
+},
+```
+---
 
 ## Tuỳ chọn chính của DataTableLib
 - api: string — url endpoint (dùng cho fetch ban đầu hoặc server-side).
