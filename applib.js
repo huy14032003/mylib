@@ -18,7 +18,7 @@ export class ApiClient {
     this.defaultHeaders = options.headers || {};
     this.token = options.token || null;
     this.defaultTimeout = options.timeout || 10000;
-    this.endpoints={}
+    this.endpoints = {};
   }
 
   setToken(token) {
@@ -62,7 +62,7 @@ export class ApiClient {
       clearTimeout(id);
 
       if (!response.ok) {
-        let errorDetail =null;
+        let errorDetail = null;
         const errorBody = await response.json();
         try {
           errorDetail = errorBody.message || JSON.stringify(errorBody);
@@ -71,7 +71,9 @@ export class ApiClient {
           status: response.status,
           url: resource,
           body: errorBody,
-          message: errorBody?.message || `Request failed with status ${response.status}`
+          message:
+            errorBody?.message ||
+            `Request failed with status ${response.status}`,
         };
       }
 
@@ -124,7 +126,6 @@ export class ApiClient {
       headers: this.getDefaultHeaders(noCache),
       timeout,
     });
-    
   }
   registerGetEndpoint(name, url, cacheOpt) {
     this.endpoints[name] = (params = {}) =>
@@ -132,18 +133,15 @@ export class ApiClient {
   }
 
   registerPostEndpoint(name, url) {
-    this.endpoints[name] = (data = {}) =>
-      this.post(url, data);
+    this.endpoints[name] = (data = {}) => this.post(url, data);
   }
 
   registerPutEndpoint(name, url) {
-    this.endpoints[name] = (data = {}) =>
-      this.put(url, data);
+    this.endpoints[name] = (data = {}) => this.put(url, data);
   }
 
   registerDeleteEndpoint(name, url) {
-    this.endpoints[name] = (params = {}) =>
-      this.delete(url, { params });
+    this.endpoints[name] = (params = {}) => this.delete(url, { params });
   }
 }
 
@@ -513,7 +511,7 @@ export class DataTableLib {
     const addButton = (label, page, active = false, disabled = false) => {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.textContent = label;
+      btn.innerHTML = label;
       if (active) btn.classList.add("active");
       if (disabled) btn.disabled = true;
       if (!disabled) {
@@ -526,7 +524,12 @@ export class DataTableLib {
       container.appendChild(btn);
     };
 
-    addButton("«", this.currentPage - 1, false, this.currentPage === 1);
+    addButton(
+      "<span>Previos</span>",
+      this.currentPage - 1,
+      false,
+      this.currentPage === 1
+    );
     if (this.currentPage > 2) addButton(1, 1);
     if (this.currentPage >= 3)
       container.appendChild(document.createTextNode("..."));
@@ -537,7 +540,7 @@ export class DataTableLib {
       container.appendChild(document.createTextNode("..."));
     if (this.currentPage < totalPages - 1) addButton(totalPages, totalPages);
     addButton(
-      "»",
+      "<span>Next</span>",
       this.currentPage + 1,
       false,
       this.currentPage === totalPages
