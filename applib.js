@@ -71,9 +71,7 @@ export class ApiClient {
           status: response.status,
           url: resource,
           body: errorBody,
-          message:
-            errorBody?.message ||
-            `Request failed with status ${response.status}`,
+          message: errorBody?.message || `Request failed with status ${response.status}`,
         };
       }
 
@@ -128,8 +126,7 @@ export class ApiClient {
     });
   }
   registerGetEndpoint(name, url, cacheOpt) {
-    this.endpoints[name] = (params = {}) =>
-      this.get(url, { params, noCache: cacheOpt === "no-cache" });
+    this.endpoints[name] = (params = {}) => this.get(url, { params, noCache: cacheOpt === "no-cache" });
   }
 
   registerPostEndpoint(name, url) {
@@ -250,22 +247,50 @@ export class DataTableLib {
         } catch {}
       }
 
-      let url =
-        this.serverSide && typeof this.buildUrl === "function"
-          ? this.buildUrl(page, searchTerm)
-          : this.api;
+      let url = this.serverSide && typeof this.buildUrl === "function" ? this.buildUrl(page, searchTerm) : this.api;
 
-      if (!url) {
-        const msg = "No API URL provided";
+      if (Array.isArray(url)) {
+        this.data = url;
+        this.filteredData = [...url];
+        this.totalRows = url.length;
+
+        if (typeof this.config.onAfterFetch === "function") {
+          try {
+            this.config.onAfterFetch(this.filteredData);
+          } catch {}
+        }
+
+        this.render();
+        return;
+      }
+
+      if (url && typeof url === "object" && !Array.isArray(url)) {
+        const arr = this.getArrayFromData(url);
+        this.data = arr;
+        this.filteredData = [...arr];
+        this.totalRows = arr.length;
+
+        if (typeof this.config.onAfterFetch === "function") {
+          try {
+            this.config.onAfterFetch(this.filteredData);
+          } catch {}
+        }
+
+        this.render();
+        return;
+      }
+
+      if (!url || typeof url !== "string") {
+        const msg = "No valid API URL or data provided";
         this.showError(msg);
-        if (typeof this.config.onError === "function")
-          this.config.onError(new Error(msg));
+        if (typeof this.config.onError === "function") this.config.onError(new Error(msg));
         this.showLoading(false);
         return;
       }
 
       const res = await fetch(url, { signal: this._abortController.signal });
       if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+
       let result;
       const contentType = res.headers.get("content-type") || "";
       if (contentType.includes("application/json")) result = await res.json();
@@ -273,17 +298,13 @@ export class DataTableLib {
 
       if (typeof this.formatData === "function") {
         const formatted = this.formatData(result) || [];
-        this.data = Array.isArray(formatted)
-          ? formatted
-          : this.getArrayFromData(formatted);
+        this.data = Array.isArray(formatted) ? formatted : this.getArrayFromData(formatted);
       } else {
         this.data = this.getArrayFromData(result);
       }
 
       this.filteredData = [...this.data];
-      this.totalRows = this.serverSide
-        ? result.total || this.filteredData.length
-        : this.filteredData.length;
+      this.totalRows = this.serverSide ? result.total || this.filteredData.length : this.filteredData.length;
 
       if (typeof this.config.onAfterFetch === "function") {
         try {
@@ -312,9 +333,7 @@ export class DataTableLib {
       return obj.flatMap((v) => this.flattenValues(v, seen));
     }
     return Object.values(obj).flatMap((val) =>
-      typeof val === "object" && val !== null
-        ? this.flattenValues(val, seen)
-        : [val]
+      typeof val === "object" && val !== null ? this.flattenValues(val, seen) : [val]
     );
   }
 
@@ -348,10 +367,7 @@ export class DataTableLib {
       if (!th) return;
       const key = th.dataset.key;
       if (!key) return;
-      this.sortConfig.direction =
-        this.sortConfig.key === key && this.sortConfig.direction === "asc"
-          ? "desc"
-          : "asc";
+      this.sortConfig.direction = this.sortConfig.key === key && this.sortConfig.direction === "asc" ? "desc" : "asc";
       this.sortConfig.key = key;
       this.sortData();
     });
@@ -491,8 +507,7 @@ export class DataTableLib {
 
   renderPagination(totalPages) {
     if (!this.pagination) return;
-    if (this.serverSide)
-      totalPages = Math.ceil(this.totalRows / this.rows) || 1;
+    if (this.serverSide) totalPages = Math.ceil(this.totalRows / this.rows) || 1;
 
     const containerId = this.paginationId || `pagination-${this.tableId}`;
     let container = document.getElementById(containerId);
@@ -501,8 +516,7 @@ export class DataTableLib {
       container = document.createElement("div");
       container.id = containerId;
       const tableElem = document.getElementById(this.tableId);
-      const wrapper =
-        tableElem?.closest(".table-responsive") || tableElem?.parentElement;
+      const wrapper = tableElem?.closest(".table-responsive") || tableElem?.parentElement;
       wrapper?.appendChild(container);
     }
 
@@ -524,33 +538,20 @@ export class DataTableLib {
       container.appendChild(btn);
     };
 
-    addButton(
-      "<span>Previos</span>",
-      this.currentPage - 1,
-      false,
-      this.currentPage === 1
-    );
+    addButton("<span>Previos</span>", this.currentPage - 1, false, this.currentPage === 1);
     if (this.currentPage > 2) addButton(1, 1);
-    if (this.currentPage >= 3)
-      container.appendChild(document.createTextNode("..."));
+    if (this.currentPage >= 3) container.appendChild(document.createTextNode("..."));
     for (let i = this.currentPage - 1; i <= this.currentPage + 1; i++) {
       if (i > 0 && i <= totalPages) addButton(i, i, i === this.currentPage);
     }
-    if (this.currentPage < totalPages - 2)
-      container.appendChild(document.createTextNode("..."));
+    if (this.currentPage < totalPages - 2) container.appendChild(document.createTextNode("..."));
     if (this.currentPage < totalPages - 1) addButton(totalPages, totalPages);
-    addButton(
-      "<span>Next</span>",
-      this.currentPage + 1,
-      false,
-      this.currentPage === totalPages
-    );
+    addButton("<span>Next</span>", this.currentPage + 1, false, this.currentPage === totalPages);
   }
 
   render() {
     // legacy onRender (kept): called with filteredData and instance
-    if (typeof this.onRender === "function")
-      this.onRender(this.filteredData, this);
+    if (typeof this.onRender === "function") this.onRender(this.filteredData, this);
     this.renderTableRows();
   }
 
