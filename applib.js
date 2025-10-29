@@ -249,39 +249,8 @@ export class DataTableLib {
 
       let url = this.serverSide && typeof this.buildUrl === "function" ? this.buildUrl(page, searchTerm) : this.api;
 
-      if (Array.isArray(url)) {
-        this.data = url;
-        this.filteredData = [...url];
-        this.totalRows = url.length;
-
-        if (typeof this.config.onAfterFetch === "function") {
-          try {
-            this.config.onAfterFetch(this.filteredData);
-          } catch {}
-        }
-
-        this.render();
-        return;
-      }
-
-      if (url && typeof url === "object" && !Array.isArray(url)) {
-        const arr = this.getArrayFromData(url);
-        this.data = arr;
-        this.filteredData = [...arr];
-        this.totalRows = arr.length;
-
-        if (typeof this.config.onAfterFetch === "function") {
-          try {
-            this.config.onAfterFetch(this.filteredData);
-          } catch {}
-        }
-
-        this.render();
-        return;
-      }
-
-      if (!url || typeof url !== "string") {
-        const msg = "No valid API URL or data provided";
+      if (!url) {
+        const msg = "No API URL provided";
         this.showError(msg);
         if (typeof this.config.onError === "function") this.config.onError(new Error(msg));
         this.showLoading(false);
@@ -290,7 +259,6 @@ export class DataTableLib {
 
       const res = await fetch(url, { signal: this._abortController.signal });
       if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-
       let result;
       const contentType = res.headers.get("content-type") || "";
       if (contentType.includes("application/json")) result = await res.json();
@@ -437,11 +405,32 @@ export class DataTableLib {
       }
     }
 
+    // 👇 Thêm xử lý NO DATA
+    if (!displayData || displayData.length === 0) {
+      const tr = document.createElement("tr");
+      tr.className = this.emptyClass || "dt-empty";
+      if (typeof this.emptyRenderer === "function") {
+        const custom = this.emptyRenderer(tr);
+        if (custom instanceof Node) {
+          tr.appendChild(custom);
+        } else if (typeof custom === "string") {
+          tr.innerHTML = custom;
+        } else {
+          tr.innerHTML = `<td colspan="${this.columnsConfig.length}" style="text-align:center">${this.emptyMessage}</td>`;
+        }
+      } else {
+        tr.innerHTML = `<td colspan="${this.columnsConfig.length}" style="text-align:center">${this.emptyMessage}</td>`;
+      }
+      tbody.appendChild(tr);
+      if (this.pagination) this.renderPagination(1);
+      return;
+    }
+
+    // nếu có dữ liệu thì render bình thường
     const fragment = document.createDocumentFragment();
     displayData.forEach((row, rowIndex) => {
       const tr = document.createElement("tr");
 
-      // NEW: if user provided rowRenderer, use it (can return HTML string or Node)
       if (typeof this.rowRenderer === "function") {
         try {
           const out = this.rowRenderer(row, rowIndex, this);
@@ -450,30 +439,23 @@ export class DataTableLib {
             fragment.appendChild(tr);
             return;
           } else if (typeof out === "string") {
-            // user expects full HTML for the row
             tr.innerHTML = out;
             fragment.appendChild(tr);
             return;
           } else if (Array.isArray(out)) {
             out.forEach((item) => {
-              if (item instanceof Node) tr.appendChild(item);
-              else {
-                const td = document.createElement("td");
-                td.textContent = String(item ?? "");
-                tr.appendChild(td);
-              }
+              const td = document.createElement("td");
+              td.textContent = String(item ?? "");
+              tr.appendChild(td);
             });
             fragment.appendChild(tr);
             return;
           }
-          // if out is falsy, fallback to default column rendering
         } catch (err) {
-          // if rowRenderer throws, fallback to default rendering
           console.error("rowRenderer error:", err);
         }
       }
 
-      // default per-column rendering
       this.columnsConfig.forEach((col) => {
         const td = document.createElement("td");
         try {
@@ -487,21 +469,19 @@ export class DataTableLib {
               td.textContent = String(out ?? "");
             }
           } else {
-            const val = row[col.field] ?? "";
-            td.textContent = String(val);
+            td.textContent = String(row[col.field] ?? "");
           }
-        } catch (err) {
+        } catch {
           td.textContent = "";
         }
         tr.appendChild(td);
       });
-
       fragment.appendChild(tr);
     });
+
     tbody.appendChild(fragment);
 
     if (this.pagination) this.renderPagination(totalPages);
-    // enableSorting attaches on thead only once; ensure it's attached
     if (this.sortable) this.enableSorting();
   }
 
