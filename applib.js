@@ -249,8 +249,39 @@ export class DataTableLib {
 
       let url = this.serverSide && typeof this.buildUrl === "function" ? this.buildUrl(page, searchTerm) : this.api;
 
-      if (!url) {
-        const msg = "No API URL provided";
+      if (Array.isArray(url)) {
+        this.data = url;
+        this.filteredData = [...url];
+        this.totalRows = url.length;
+
+        if (typeof this.config.onAfterFetch === "function") {
+          try {
+            this.config.onAfterFetch(this.filteredData);
+          } catch {}
+        }
+
+        this.render();
+        return;
+      }
+
+      if (url && typeof url === "object" && !Array.isArray(url)) {
+        const arr = this.getArrayFromData(url);
+        this.data = arr;
+        this.filteredData = [...arr];
+        this.totalRows = arr.length;
+
+        if (typeof this.config.onAfterFetch === "function") {
+          try {
+            this.config.onAfterFetch(this.filteredData);
+          } catch {}
+        }
+
+        this.render();
+        return;
+      }
+
+      if (!url || typeof url !== "string") {
+        const msg = "No valid API URL or data provided";
         this.showError(msg);
         if (typeof this.config.onError === "function") this.config.onError(new Error(msg));
         this.showLoading(false);
@@ -259,6 +290,7 @@ export class DataTableLib {
 
       const res = await fetch(url, { signal: this._abortController.signal });
       if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+
       let result;
       const contentType = res.headers.get("content-type") || "";
       if (contentType.includes("application/json")) result = await res.json();
