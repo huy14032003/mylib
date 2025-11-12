@@ -250,9 +250,13 @@ export class DataTableLib {
       let url = this.serverSide && typeof this.buildUrl === "function" ? this.buildUrl(page, searchTerm) : this.api;
 
       if (Array.isArray(url)) {
-        this.data = url;
-        this.filteredData = [...url];
-        this.totalRows = url.length;
+        let arr = url;
+        if (typeof this.formatData === "function") {
+          arr = this.formatData(arr) || arr;
+        }
+        this.data = Array.isArray(arr) ? arr : this.getArrayFromData(arr);
+        this.filteredData = [...this.data];
+        this.totalRows = this.data.length;
 
         if (typeof this.config.onAfterFetch === "function") {
           try {
@@ -265,10 +269,13 @@ export class DataTableLib {
       }
 
       if (url && typeof url === "object" && !Array.isArray(url)) {
-        const arr = this.getArrayFromData(url);
-        this.data = arr;
-        this.filteredData = [...arr];
-        this.totalRows = arr.length;
+        let arr = this.getArrayFromData(url);
+        if (typeof this.formatData === "function") {
+          arr = this.formatData(arr) || arr;
+        }
+        this.data = Array.isArray(arr) ? arr : this.getArrayFromData(arr);
+        this.filteredData = [...this.data];
+        this.totalRows = this.data.length;
 
         if (typeof this.config.onAfterFetch === "function") {
           try {
