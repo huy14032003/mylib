@@ -152,7 +152,6 @@ export class DataTableLib {
       currentPage: 1,
       tableId: "tbl-application",
       onRender: null,
-      // new: rowRenderer - function(row, rowIndex, tableInstance) => string|Node|null
       rowRenderer: null,
       pagination: true,
       searchBoxId: "",
@@ -160,23 +159,28 @@ export class DataTableLib {
       totalRows: 0,
       loadingId: "",
       errorId: "",
-      sortable: true,
+      sortable: true, // legacy name
+      sort: undefined, // new explicit option (true/false). undefined = use sortable
       paginationId: "",
       columnsConfig: [],
       searchDebounceMs: 400,
       buildUrl: null,
       formatData: null,
-      // hooks
       onBeforeFetch: null,
       onAfterFetch: null,
       onError: null,
       emptyMessage: "No data available",
-      emptyRenderer: null, // optional: (container) => Node | string (string sẽ được gán bằng textContent trừ khi bạn muốn innerHTML)
-      emptyClass: "dt-empty", // class cho <tr> khi empty
+      emptyRenderer: null,
+      emptyClass: "dt-empty",
+      fetchOptions: {},
+      totalPath: (res) => res?.total ?? res?.meta?.total ?? 0,
     };
     this.config = Object.assign({}, defaults, options);
-    // copy main props for convenience
+    // assign config to instance
     Object.assign(this, this.config);
+
+    // normalize sorting flag: explicit sort overrides legacy sortable
+    this.sortable = typeof this.config.sort === "boolean" ? this.config.sort : !!this.config.sortable;
 
     this.data = [];
     this.filteredData = [];
@@ -185,15 +189,16 @@ export class DataTableLib {
 
     this._searchTimer = null;
     this._abortController = null;
+    this._handlers = { search: null, thead: null };
+    this._createdPaginationContainer = false;
   }
 
-  // find first array in nested object (DFS)
   getArrayFromData(data, visited = new WeakSet()) {
     if (Array.isArray(data)) return [...data];
     if (data && typeof data === "object") {
       if (visited.has(data)) return [];
       visited.add(data);
-      for (const key in data) {
+      for (const key of Object.keys(data)) {
         try {
           const val = data[key];
           if (Array.isArray(val)) return [...val];
@@ -208,10 +213,8 @@ export class DataTableLib {
   }
 
   async init() {
-    // initial fetch + setup
     await this.fetchData();
     this._setupSearch();
-    // sorting uses delegation attached after render; ensure it's attached
     if (this.sortable) this.enableSorting();
   }
 
@@ -219,7 +222,9 @@ export class DataTableLib {
     if (!this.searchBoxId) return;
     const input = document.getElementById(this.searchBoxId);
     if (!input) return;
-    input.addEventListener("input", (e) => {
+    if (this._handlers.search) input.removeEventListener("input", this._handlers.search);
+
+    this._handlers.search = (e) => {
       const keyword = e.target.value || "";
       clearTimeout(this._searchTimer);
       this._searchTimer = setTimeout(() => {
@@ -230,59 +235,41 @@ export class DataTableLib {
           this.search(keyword);
         }
       }, this.searchDebounceMs);
-    });
+    };
+    input.addEventListener("input", this._handlers.search);
   }
 
   async fetchData(page = this.currentPage, searchTerm = "") {
     this.showLoading(true);
     try {
-      try {
-        this._abortController?.abort();
-      } catch {}
+      try { this._abortController?.abort(); } catch {}
       this._abortController = new AbortController();
 
       if (typeof this.config.onBeforeFetch === "function") {
-        try {
-          this.config.onBeforeFetch({ page, searchTerm });
-        } catch {}
+        try { this.config.onBeforeFetch({ page, searchTerm }); } catch {}
       }
 
       let url = this.serverSide && typeof this.buildUrl === "function" ? this.buildUrl(page, searchTerm) : this.api;
 
+      // If direct array/object provided
       if (Array.isArray(url)) {
         let arr = url;
-        if (typeof this.formatData === "function") {
-          arr = this.formatData(arr) || arr;
-        }
+        if (typeof this.formatData === "function") arr = this.formatData(arr) || arr;
         this.data = Array.isArray(arr) ? arr : this.getArrayFromData(arr);
         this.filteredData = [...this.data];
         this.totalRows = this.data.length;
-
-        if (typeof this.config.onAfterFetch === "function") {
-          try {
-            this.config.onAfterFetch(this.filteredData);
-          } catch {}
-        }
-
+        if (typeof this.config.onAfterFetch === "function") { try { this.config.onAfterFetch(this.filteredData); } catch {} }
         this.render();
         return;
       }
 
       if (url && typeof url === "object" && !Array.isArray(url)) {
         let arr = this.getArrayFromData(url);
-        if (typeof this.formatData === "function") {
-          arr = this.formatData(arr) || arr;
-        }
+        if (typeof this.formatData === "function") arr = this.formatData(arr) || arr;
         this.data = Array.isArray(arr) ? arr : this.getArrayFromData(arr);
         this.filteredData = [...this.data];
         this.totalRows = this.data.length;
-
-        if (typeof this.config.onAfterFetch === "function") {
-          try {
-            this.config.onAfterFetch(this.filteredData);
-          } catch {}
-        }
-
+        if (typeof this.config.onAfterFetch === "function") { try { this.config.onAfterFetch(this.filteredData); } catch {} }
         this.render();
         return;
       }
@@ -295,7 +282,7 @@ export class DataTableLib {
         return;
       }
 
-      const res = await fetch(url, { signal: this._abortController.signal });
+      const res = await fetch(url, { signal: this._abortController.signal, ...this.fetchOptions });
       if (!res.ok) throw new Error(`HTTP error ${res.status}`);
 
       let result;
@@ -305,19 +292,23 @@ export class DataTableLib {
 
       if (typeof this.formatData === "function") {
         const formatted = this.formatData(result) || [];
-        this.data = Array.isArray(formatted) ? formatted : this.getArrayFromData(formatted);
+        if (Array.isArray(formatted)) this.data = formatted;
+        else if (formatted && typeof formatted === "object") this.data = this.getArrayFromData(formatted);
+        else this.data = this.getArrayFromData(formatted);
       } else {
         this.data = this.getArrayFromData(result);
       }
 
       this.filteredData = [...this.data];
-      this.totalRows = this.serverSide ? result.total || this.filteredData.length : this.filteredData.length;
 
-      if (typeof this.config.onAfterFetch === "function") {
-        try {
-          this.config.onAfterFetch(this.filteredData);
-        } catch {}
+      if (this.serverSide) {
+        if (typeof this.config.totalPath === "function") this.totalRows = this.config.totalPath(result) || this.filteredData.length;
+        else this.totalRows = Number(result?.total) || this.filteredData.length;
+      } else {
+        this.totalRows = this.filteredData.length;
       }
+
+      if (typeof this.config.onAfterFetch === "function") { try { this.config.onAfterFetch(this.filteredData); } catch {} }
 
       this.render();
     } catch (err) {
@@ -330,54 +321,43 @@ export class DataTableLib {
     }
   }
 
-  // flatten values recursively with cycle protection
   flattenValues(obj, seen = new WeakSet()) {
     if (obj == null) return [obj];
     if (typeof obj !== "object") return [obj];
     if (seen.has(obj)) return [];
     seen.add(obj);
-    if (Array.isArray(obj)) {
-      return obj.flatMap((v) => this.flattenValues(v, seen));
-    }
-    return Object.values(obj).flatMap((val) =>
-      typeof val === "object" && val !== null ? this.flattenValues(val, seen) : [val]
-    );
+    if (Array.isArray(obj)) return obj.flatMap((v) => this.flattenValues(v, seen));
+    return Object.values(obj).flatMap((val) => (typeof val === "object" && val !== null ? this.flattenValues(val, seen) : [val]));
   }
 
   search(keyword = "") {
-    const key = String(keyword || "")
-      .toLowerCase()
-      .trim();
-    this.filteredData = key
-      ? this.data.filter((item) =>
-          this.flattenValues(item).some((val) =>
-            String(val ?? "")
-              .toLowerCase()
-              .includes(key)
-          )
-        )
-      : [...this.data];
+    const key = String(keyword || "").toLowerCase().trim();
+    this.filteredData = key ? this.data.filter((item) => this.flattenValues(item).some((val) => String(val ?? "").toLowerCase().includes(key))) : [...this.data];
     this.currentPage = 1;
     this.render();
   }
 
   enableSorting() {
+    if (!this.sortable) return;
     const table = document.getElementById(this.tableId);
     if (!table) return;
     const thead = table.querySelector("thead");
     if (!thead) return;
     if (thead.dataset.sortAttached) return;
-    thead.dataset.sortAttached = "1";
 
-    thead.addEventListener("click", (e) => {
+    this._handlers.thead = (e) => {
       const th = e.target.closest("th");
       if (!th) return;
+      // respect per-column disable flag
+      if (th.dataset.sortable === "0") return;
       const key = th.dataset.key;
       if (!key) return;
       this.sortConfig.direction = this.sortConfig.key === key && this.sortConfig.direction === "asc" ? "desc" : "asc";
       this.sortConfig.key = key;
       this.sortData();
-    });
+    };
+    thead.addEventListener("click", this._handlers.thead);
+    thead.dataset.sortAttached = "1";
   }
 
   sortData() {
@@ -401,42 +381,35 @@ export class DataTableLib {
     this.render();
   }
 
-  escapeHtml(str = "") {
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
-
   renderTableRows() {
     const table = document.getElementById(this.tableId);
     const thead = table?.querySelector("thead");
     const tbody = table?.querySelector("tbody");
     if (!tbody || !thead) return;
 
-    // build header
     thead.innerHTML = "";
     const headerRow = document.createElement("tr");
     this.columnsConfig.forEach((col) => {
       const th = document.createElement("th");
       th.textContent = col.label || col.field;
       if (col.field) th.dataset.key = col.field;
-      if (this.sortable) th.setAttribute("role", "button");
+      // per-column sortable control: default true unless explicitly false
+      if (this.sortable && col.sortable === false) {
+        th.dataset.sortable = "0";
+      } else if (this.sortable) {
+        th.setAttribute("role", "button");
+      }
       headerRow.appendChild(th);
     });
     thead.appendChild(headerRow);
 
-    // build rows
     tbody.innerHTML = "";
     let displayData = this.filteredData;
     let totalPages = 1;
 
     if (this.pagination) {
-      if (this.serverSide) {
-        totalPages = Math.ceil(this.totalRows / this.rows) || 1;
-      } else {
+      if (this.serverSide) totalPages = Math.ceil(this.totalRows / this.rows) || 1;
+      else {
         totalPages = Math.ceil(displayData.length / this.rows) || 1;
         const start = (this.currentPage - 1) * this.rows;
         const end = start + this.rows;
@@ -444,19 +417,14 @@ export class DataTableLib {
       }
     }
 
-    // 👇 Thêm xử lý NO DATA
     if (!displayData || displayData.length === 0) {
       const tr = document.createElement("tr");
       tr.className = this.emptyClass || "dt-empty";
       if (typeof this.emptyRenderer === "function") {
         const custom = this.emptyRenderer(tr);
-        if (custom instanceof Node) {
-          tr.appendChild(custom);
-        } else if (typeof custom === "string") {
-          tr.innerHTML = custom;
-        } else {
-          tr.innerHTML = `<td colspan="${this.columnsConfig.length}" style="text-align:center">${this.emptyMessage}</td>`;
-        }
+        if (custom instanceof Node) tr.appendChild(custom);
+        else if (typeof custom === "string") tr.innerHTML = custom;
+        else tr.innerHTML = `<td colspan="${this.columnsConfig.length}" style="text-align:center">${this.emptyMessage}</td>`;
       } else {
         tr.innerHTML = `<td colspan="${this.columnsConfig.length}" style="text-align:center">${this.emptyMessage}</td>`;
       }
@@ -465,7 +433,6 @@ export class DataTableLib {
       return;
     }
 
-    // nếu có dữ liệu thì render bình thường
     const fragment = document.createDocumentFragment();
     displayData.forEach((row, rowIndex) => {
       const tr = document.createElement("tr");
@@ -473,26 +440,10 @@ export class DataTableLib {
       if (typeof this.rowRenderer === "function") {
         try {
           const out = this.rowRenderer(row, rowIndex, this);
-          if (out instanceof Node) {
-            tr.appendChild(out);
-            fragment.appendChild(tr);
-            return;
-          } else if (typeof out === "string") {
-            tr.innerHTML = out;
-            fragment.appendChild(tr);
-            return;
-          } else if (Array.isArray(out)) {
-            out.forEach((item) => {
-              const td = document.createElement("td");
-              td.textContent = String(item ?? "");
-              tr.appendChild(td);
-            });
-            fragment.appendChild(tr);
-            return;
-          }
-        } catch (err) {
-          console.error("rowRenderer error:", err);
-        }
+          if (out instanceof Node) { tr.appendChild(out); fragment.appendChild(tr); return; }
+          else if (typeof out === "string") { tr.innerHTML = out; fragment.appendChild(tr); return; }
+          else if (Array.isArray(out)) { out.forEach((item) => { const td = document.createElement("td"); td.textContent = String(item ?? ""); tr.appendChild(td); }); fragment.appendChild(tr); return; }
+        } catch (err) { console.error("rowRenderer error:", err); }
       }
 
       this.columnsConfig.forEach((col) => {
@@ -500,19 +451,13 @@ export class DataTableLib {
         try {
           if (typeof col.render === "function") {
             const out = col.render(row);
-            if (out instanceof Node) {
-              td.appendChild(out);
-            } else if (col.safeHtml) {
-              td.innerHTML = String(out ?? "");
-            } else {
-              td.textContent = String(out ?? "");
-            }
+            if (out instanceof Node) td.appendChild(out);
+            else if (col.safeHtml) td.innerHTML = String(out ?? "");
+            else td.textContent = String(out ?? "");
           } else {
             td.textContent = String(row[col.field] ?? "");
           }
-        } catch {
-          td.textContent = "";
-        }
+        } catch { td.textContent = ""; }
         tr.appendChild(td);
       });
       fragment.appendChild(tr);
@@ -537,6 +482,7 @@ export class DataTableLib {
       const tableElem = document.getElementById(this.tableId);
       const wrapper = tableElem?.closest(".table-responsive") || tableElem?.parentElement;
       wrapper?.appendChild(container);
+      this._createdPaginationContainer = true;
     }
 
     container.innerHTML = "";
@@ -557,7 +503,7 @@ export class DataTableLib {
       container.appendChild(btn);
     };
 
-    addButton("<span>Previos</span>", this.currentPage - 1, false, this.currentPage === 1);
+    addButton("<span>Previous</span>", this.currentPage - 1, false, this.currentPage === 1);
     if (this.currentPage > 2) addButton(1, 1);
     if (this.currentPage >= 3) container.appendChild(document.createTextNode("..."));
     for (let i = this.currentPage - 1; i <= this.currentPage + 1; i++) {
@@ -569,7 +515,6 @@ export class DataTableLib {
   }
 
   render() {
-    // legacy onRender (kept): called with filteredData and instance
     if (typeof this.onRender === "function") this.onRender(this.filteredData, this);
     this.renderTableRows();
   }
@@ -580,6 +525,56 @@ export class DataTableLib {
     this.render();
   }
 
+  updateData(newData) {
+    this.data = Array.isArray(newData) ? newData : this.getArrayFromData(newData);
+    this.filteredData = [...this.data];
+    this.totalRows = this.data.length;
+    this.currentPage = 1;
+    this.render();
+  }
+
+  goto(page) {
+    this.currentPage = Math.min(Math.max(1, page), Math.ceil(this.totalRows / this.rows) || 1);
+    if (this.serverSide) this.fetchData(this.currentPage);
+    else this.renderTableRows();
+  }
+
+  setRows(n) {
+    this.rows = Number(n) || this.rows;
+    this.currentPage = 1;
+    this.render();
+  }
+
+  setFetchOptions(opts = {}) {
+    this.fetchOptions = Object.assign({}, this.fetchOptions, opts);
+  }
+
+  destroy() {
+    try { this._abortController?.abort(); } catch {}
+    clearTimeout(this._searchTimer);
+
+    if (this.searchBoxId && this._handlers.search) {
+      const input = document.getElementById(this.searchBoxId);
+      if (input) input.removeEventListener("input", this._handlers.search);
+      this._handlers.search = null;
+    }
+
+    const table = document.getElementById(this.tableId);
+    const thead = table?.querySelector("thead");
+    if (thead && this._handlers.thead) {
+      thead.removeEventListener("click", this._handlers.thead);
+      delete thead.dataset.sortAttached;
+      this._handlers.thead = null;
+    }
+
+    const containerId = this.paginationId || `pagination-${this.tableId}`;
+    const container = document.getElementById(containerId);
+    if (container && this._createdPaginationContainer) {
+      container.parentElement?.removeChild(container);
+      this._createdPaginationContainer = false;
+    }
+  }
+
   showLoading(show) {
     if (!this.loadingId) return;
     const el = document.getElementById(this.loadingId);
@@ -587,13 +582,15 @@ export class DataTableLib {
   }
 
   showError(message) {
-    if (!this.errorId) return;
+    if (!this.errorId) {
+      console.error("DataTableLib Error:", message);
+      return;
+    }
     const el = document.getElementById(this.errorId);
     if (el) {
       el.textContent = message;
       el.style.display = "block";
     } else {
-      // fallback console
       console.error("DataTableLib Error:", message);
     }
   }
